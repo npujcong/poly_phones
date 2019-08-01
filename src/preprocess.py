@@ -21,7 +21,10 @@
 # Date 2019/07/30 16:44:54
 #
 ######################################################################
+
 import argparse
+import json
+import random
 import pickle
 
 POLY_DICT={}
@@ -47,26 +50,16 @@ class words:
                 return True
         self._poly_index = None
         return False
+    
+    def get(self):
+        return {
+            "value": self._value,
+            "pos": self._pos,
+            "pinyin" : self._pinyin,
+            "ispoly" : self._ispoly,
+            "poly_index" : self._poly_index
+        }
 
-    @property
-    def value(self):
-        return self._value
-    
-    @property
-    def pos(self):
-        return self._pos
-
-    @property
-    def pinyin(self):
-        return self._pinyin
-    
-    @property
-    def ispoly(self):
-        return self._is_poly
-    
-    @property
-    def poly_index(self):
-        return self._poly_index
 
 """
 return : corpus: [sentence1, sentence2]
@@ -77,46 +70,77 @@ def process_raw(args):
         pinyin_lines = [line.strip().split(" ") for line in f_pinyin.readlines()]
     with open(args.pos_txt, 'r') as f_pos:
         pos_lines = f_pos.readlines()
+
     sentence, corpus = [],[]
     sentence_index = 0
-    character_index = 0
-    for line in pos_lines:
-        if line in ['\n','\r\n']:
-            corpus.append(sentence)
-            for item in sentence:
-                print(item.value, item.pos, item.pinyin)
-            print("\n")
-            character_index = 0
-            sentence_index += 1
-            sentence = []
-        else:
-            [value, _, pos] = line.strip().split('\t')
+    for sentence_index, line in enumerate(pos_lines):
+        character_index = 0
+        sentence = []
+        for [value, _, pos] in [item.split("_") for item in line.strip().split(" ")]:
             if value not in PUNCTUATION:
                 pinyin = pinyin_lines[sentence_index][character_index : character_index + len(value)]
                 character_index += len(value)
                 w = words(value, pos, pinyin)
             else:
                 w = words(value, pos, None)
-        sentence.append(w)
+            sentence.append(w.get())
+            print(w.get())
+        print("\n")
+        corpus.append(sentence)
+    return corpus
 
-def construc_feature(corpus, train_path, test_path):
-    context = 1
+def build_vocab_idx(corpus):
+    full_vocab = set(w.value for sent in corpus for w in sent)
+    # 要不要把出现次数特别少的字加入进去？
+    word2idx = {}
+    for word in full_vocab:
+        word2idx[word] = len(word2idx)
+
+# [word1, word2, word3...] 
+# --> [(character, left_pos, right_pos, pos, is_poly), (), ()...]
+
+def construct_dataset(corpus, train_dataset, test_dataset):
+    features, labels = [], []
     for sentence in corpus:
-        for i, word in enumerate(sentence):
-            if word.ispoly:
-                
+        feat, lab = construct_sentence_feature(sentence)
+        features.append(feat)
+        labels.append(lab)
+    # shuffle dataset
+    tmp = list(zip(features, labels))
+    random.shuffle(tmp)
+    features, labels = zip(*tmp)
+    json_str = json.dumps(features, ensure_ascii=False, indent=2)
+    with open(train_dataset, "w") as json_file:
+        json_file.write(json_str)
 
-
+def construct_sentence_feature(sentence):
+    feature, label = [], []
+    for i, word in enumerate(sentence):
+        for character in word["value"]:
+            value = character
+            pos = word["pos"]
+            ispoly = word["ispoly"]
+            left_index = i - 1 if (i - 1) > 0 else i
+            right_index = i + 1 if (i + 1) < len(sentence) else i
+            left_neighbour_pos = sentence[left_index]["pos"]
+            right_neighbour_pos = sentence[right_index]["pos"]
+            if ispoly:
+                label.append(word["pinyin"][word["poly_index"]])
+            else:
+                label.append("-")
+            feature_word = (value, left_neighbour_pos, right_neighbour_pos, pos, ispoly)
+            feature.append(feature_word)
+    return feature, label
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--pinyin_txt", default="data/pinyin.txt")
     parser.add_argument("--pos_txt", default="data/pos.txt")
-    parser.add_argument("--train", default="data/train.txt")
-    parser.add_argument("--test", default="data/test.txt")
+    parser.add_argument("--train", default="data/train.json")
+    parser.add_argument("--test", default="data/test.json")
     parser.add_argument("--poly_dict", default="data/poly_dict")
     args = parser.parse_args()
     with open(args.poly_dict, 'rb') as f_poly:
         POLY_DICT = pickle.load(f_poly)
     corpus = process_raw(args)
-    construc_feature(corpus, args.train, args.test)
+    construct_dataset(corpus, args.train, args.test)
