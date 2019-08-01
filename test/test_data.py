@@ -18,10 +18,13 @@
 # limitations under the License.
 #
 # Author npujcong@gmail.com(congjian)
-# Date 2019/07/30 16:41:41
+# Date 2019/07/30 16:35:25
 #
 ######################################################################
 
+import tensorflow as tf
+
 if __name__ == '__main__':
-
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch_size")
+    parser.add_argument("--learning_rate")

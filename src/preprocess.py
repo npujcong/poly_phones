@@ -109,23 +109,28 @@ def construct_dataset(corpus, train_dataset, test_dataset):
     tmp = list(zip(features, labels))
     random.shuffle(tmp)
     features, labels = zip(*tmp)
-    json_str = json.dumps(features, ensure_ascii=False, indent=2)
+    dataset = {
+        "features": features,
+        "labels": labels
+    }
+    json_str = json.dumps(dataset, ensure_ascii=False, indent=2)
     with open(train_dataset, "w") as json_file:
         json_file.write(json_str)
 
 def construct_sentence_feature(sentence):
     feature, label = [], []
     for i, word in enumerate(sentence):
-        for character in word["value"]:
+        for character_index, character in enumerate(word["value"]):
             value = character
             pos = word["pos"]
             ispoly = word["ispoly"]
+            poly_index = word["poly_index"]
             left_index = i - 1 if (i - 1) > 0 else i
             right_index = i + 1 if (i + 1) < len(sentence) else i
             left_neighbour_pos = sentence[left_index]["pos"]
             right_neighbour_pos = sentence[right_index]["pos"]
-            if ispoly:
-                label.append(word["pinyin"][word["poly_index"]])
+            if ispoly and character_index == poly_index:
+                label.append(word["pinyin"][poly_index])
             else:
                 label.append("-")
             feature_word = (value, left_neighbour_pos, right_neighbour_pos, pos, ispoly)
@@ -144,3 +149,9 @@ if __name__ == '__main__':
         POLY_DICT = pickle.load(f_poly)
     corpus = process_raw(args)
     construct_dataset(corpus, args.train, args.test)
+    # print(args.train)
+    # with open(args.train, "r") as json_file:
+    #     # json_file.write(json_str)
+    #     data = json.load(json_file)
+    #     print(data["features"])
+    #     print(data["labels"])

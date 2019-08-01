@@ -22,6 +22,26 @@
 #
 ######################################################################
 
+import tensorflow as tf
+import argparse
+from model import poly_model
+from dataset import datafeeder
+
+def train_one_epoch():
+    pass
+def eval_one_epoch():
+    pass
+
+def main(hparams):
+    hp = hparams
+    model = poly_model(hparams)
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        for epoch in range(hp.max_epoch):
+            train_one_epoch()
+        tf.logging.info()
 
 if __name__ == '__main__':
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--batch_size")
+    parser.add_argument("--learning_rate")

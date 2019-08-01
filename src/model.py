@@ -35,11 +35,11 @@ class poly_model():
             cell_fw = tf.nn.rnn_cell.LSTMCell(num_units=hp.lstm_size)
             cell_bw = tf.nn.rnn_cell.LSTMCell(num_units=np.lstm_size)
             # inputs [batch_size, T, feats_dim]
-            (output_fw, output_bw), states = tf.nn.bidirectional_dynamic_rnn(
+            (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
                 cell_fw, cell_bw, outputs)
             # A tuple (output_fw, output_bw) [batch_size, max_time, output_size]
             outputs = tf.concat([output_fw, output_bw], axis=2) #[batch_size, max_time, output_size * 2]
-        outputs = tf.layer.Dense(outputs, hp.num_class, activation = tf.nn.relu)
+        outputs = tf.layers.Dense(outputs, hp.num_class, activation = tf.nn.relu)
 
         self.inputs = inputs
         self.outputs = outputs
