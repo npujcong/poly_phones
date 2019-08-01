@@ -39,7 +39,7 @@ def main(hparams):
         sess.run(tf.global_variables_initializer())
         for epoch in range(hp.max_epoch):
             train_one_epoch()
-        tf.logging.info()
+        tf.logging.info("Epoch:{}".format(epoch))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

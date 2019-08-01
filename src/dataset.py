@@ -29,6 +29,8 @@ import tensorflow as tf
 import threading
 import traceback
 
+_pad = 0
+
 class DataFeeder(threading.Thread):
     '''Feeds batches of data into a queue on a background thread.'''
 

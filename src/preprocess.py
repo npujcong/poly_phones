@@ -89,12 +89,33 @@ def process_raw(args):
         corpus.append(sentence)
     return corpus
 
-def build_vocab_idx(corpus):
-    full_vocab = set(w.value for sent in corpus for w in sent)
-    # 要不要把出现次数特别少的字加入进去？
+def build_vocab_idx(dataset, vocab_path):
+    features = dataset["features"]
+    labels = dataset["labels"]
+    # TODO 要不要把出现次数特别少的字加入进去？
+    full_value_vocab = set(w[0] for sent in features for w in sent)
     word2idx = {}
-    for word in full_vocab:
+    for word in full_value_vocab:
         word2idx[word] = len(word2idx)
+    # TODO 注意 UNK
+    full_pos_vocab = set(w[3] for sent in features for w in sent)
+    pos2idx = {}
+    for pos in full_pos_vocab:
+        pos2idx[pos] = len(pos2idx)
+    # Label 
+    full_poly_vocab = set(poly for sent in labels for poly in sent)
+    poly2idx = {}
+    for poly in full_poly_vocab:
+        poly2idx[poly] = len(poly2idx)
+    
+    seq2id = {
+        "value_vocab": word2idx,
+        "pos_vocab": pos2idx,
+        "poly_vocab": poly2idx
+    }
+    json_str = json.dumps(seq2id, ensure_ascii=False, indent=2)
+    with open(vocab_path, "w") as json_file:
+        json_file.write(json_str)
 
 # [word1, word2, word3...] 
 # --> [(character, left_pos, right_pos, pos, is_poly), (), ()...]
@@ -116,6 +137,7 @@ def construct_dataset(corpus, train_dataset, test_dataset):
     json_str = json.dumps(dataset, ensure_ascii=False, indent=2)
     with open(train_dataset, "w") as json_file:
         json_file.write(json_str)
+    return dataset
 
 def construct_sentence_feature(sentence):
     feature, label = [], []
@@ -144,11 +166,14 @@ if __name__ == '__main__':
     parser.add_argument("--train", default="data/train.json")
     parser.add_argument("--test", default="data/test.json")
     parser.add_argument("--poly_dict", default="data/poly_dict")
+    parser.add_argument("--vocab_path", default="data/vocab.json")
+
     args = parser.parse_args()
     with open(args.poly_dict, 'rb') as f_poly:
         POLY_DICT = pickle.load(f_poly)
     corpus = process_raw(args)
-    construct_dataset(corpus, args.train, args.test)
+    dataset = construct_dataset(corpus, args.train, args.test)
+    build_vocab_idx(dataset, args.vocab_path)
     # print(args.train)
     # with open(args.train, "r") as json_file:
     #     # json_file.write(json_str)
