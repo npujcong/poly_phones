@@ -24,24 +24,133 @@
 
 import tensorflow as tf
 import argparse
-from model import poly_model
-from dataset import datafeeder
+from poly_model import Poly_Model
+from dataset import DataFeeder
 
-def train_one_epoch():
-    pass
-def eval_one_epoch():
-    pass
+def train_one_epoch(sess, train_step, train_loss, train_accuracy, 
+    global_step, batchs_per_epoch):
+    tr_loss = 0
+    tr_acc = 0
+    for i in range(batchs_per_epoch):
+        _, loss, acc = sess.run([train_step, train_loss, train_accuracy])
+        tr_loss += loss
+        tr_acc += acc
+    tr_loss /= float(batchs_per_epoch)
+    tr_acc /= float(batchs_per_epoch)
+    return tr_loss, tr_acc
 
-def main(hparams):
+def train(hparams):
     hp = hparams
-    model = poly_model(hparams)
-    with tf.Session() as sess:
+    # data_feeder
+    coord = tf.train.Coordinator()
+    feeder = DataFeeder(coord, hp)
+    numbatchs_per_epoch = int(feeder.num_samples / hp.batch_size)
+    
+    # construct model
+    inputs, target_lengths, targets = feeder.dequeue()
+    model = Poly_Model(hp, feeder.input_dim, feeder.num_class)
+    model.initialize(inputs, target_lengths, targets)
+    model.add_loss()
+    loss = model.loss
+    train_accuracy = model.compute_accuracy()
+
+    # loss & optimizer
+    global_step = tf.get_variable(
+        name="global_step",
+        shape=[],
+        dtype=tf.int64,
+        initializer=tf.zeros_initializer(),
+        trainable=False,
+        collections=[tf.GraphKeys.GLOBAL_VARIABLES, tf.GraphKeys.GLOBAL_STEP])
+    trainable_variables = tf.trainable_variables()
+    print(trainable_variables)
+    learning_rate = tf.get_variable("learning_rate", shape=[],dtype=tf.float32,
+        initializer=tf.constant_initializer(hp.learning_rate))
+    optimizer = tf.train.AdamOptimizer(learning_rate)
+    grads, _ = tf.clip_by_global_norm(
+        tf.gradients(loss, trainable_variables), hp.max_grad_norm)
+    train_step = optimizer.apply_gradients(
+        zip(grads, trainable_variables),
+        global_step=global_step)
+
+    config = tf.ConfigProto()
+    with tf.Session(config=config) as sess:
+        feeder.start_in_session(sess)
         sess.run(tf.global_variables_initializer())
-        for epoch in range(hp.max_epoch):
-            train_one_epoch()
-        tf.logging.info("Epoch:{}".format(epoch))
+        for epoch in range(hp.max_epochs):
+            tr_loss, tr_acc = train_one_epoch(sess, train_step, loss, train_accuracy,
+                global_step, numbatchs_per_epoch)
+            tf.logging.info("Epoch:{} TRIAIN LOSS: {} TRAIN ACCURACY: {}".format(epoch, tr_loss, tr_acc))
 
 if __name__ == '__main__':
+    tf.logging.set_verbosity(tf.logging.INFO)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size")
-    parser.add_argument("--learning_rate")
+    parser.add_argument(
+        '--decode',
+        default=False,
+        help="Flag indicating decoding or training.",
+        action="store_true"
+    )
+    parser.add_argument(
+        '--eval_size',
+        type=int,
+        default=0,
+        help='eval_set size'
+    )
+    parser.add_argument(
+        '--max_grad_norm',
+        type=float,
+        default=5.0,
+        help='The max gradient normalization.'
+    )
+    parser.add_argument(
+        '--queue_capacity',
+        type=int,
+        default=2,
+        help='the FIFO queue capacity'
+    )
+
+    parser.add_argument(
+        '--data_path',
+        type=str,
+        default="/home/work_nfs/jcong/workspace/blstm-chshan/egs/poly_disambiguation/data/train.txt",
+        help='the FIFO queue capacity'
+    )
+    parser.add_argument(
+        '--vocab_path',
+        type=str,
+        default="/home/work_nfs/jcong/workspace/blstm-chshan/egs/poly_disambiguation/data/vocab.json",
+        help='the FIFO queue capacity'
+    )
+    parser.add_argument(
+        '--rnn_depth',
+        type=int,
+        default=2,
+        help='Number of layers of rnn model.'
+    )
+    parser.add_argument(
+        '--rnn_num_hidden',
+        type=int,
+        default=64,
+        help='Number of hidden units to use.'
+    )
+    parser.add_argument(
+        '--batch_size',
+        type=int,
+        default=1,
+        help='Mini-batch size.'
+    )
+    parser.add_argument(
+        '--learning_rate',
+        type=float,
+        default=0.001,
+        help='Initial learning rate.'
+    )
+    parser.add_argument(
+        '--max_epochs',
+        type=int,
+        default=500,
+        help='Max number of epochs to run trainer totally.',
+    )
+    hp = parser.parse_args()
+    train(hp)

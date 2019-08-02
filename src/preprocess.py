@@ -174,9 +174,3 @@ if __name__ == '__main__':
     corpus = process_raw(args)
     dataset = construct_dataset(corpus, args.train, args.test)
     build_vocab_idx(dataset, args.vocab_path)
-    # print(args.train)
-    # with open(args.train, "r") as json_file:
-    #     # json_file.write(json_str)
-    #     data = json.load(json_file)
-    #     print(data["features"])
-    #     print(data["labels"])

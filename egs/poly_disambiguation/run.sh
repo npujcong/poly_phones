@@ -15,7 +15,7 @@
 #
 # Author: npujcong@gmail.com (congjian)
 
-stage=1
+stage=0
 current_working_dir=$(pwd)
 pro_dir=$(dirname $(dirname $current_working_dir))
 
@@ -27,7 +27,7 @@ data=$current_working_dir/data
 # set -euo pipefail
 [ ! -e $data ] && mkdir -p $data
 
-# step 1: word segment and pos_tag
+# step 0: word segment and pos_tag
 if [ $stage -le 0 ]; then
   awk -F'\t' '{print $1}' $raw/raw.utf8 > $raw/text.utf8
   awk -F'\t' '{print $2}' $raw/raw.utf8 > $raw/pinyin.utf8
@@ -37,12 +37,25 @@ if [ $stage -le 0 ]; then
     -output $raw/pos.utf8
 fi
 
-# step 2: preprocess data and generate train.txt、test.txt
+# step 1: preprocess data and generate train.txt、test.txt
 if [ $stage -le 1 ]; then
   $pro_dir/src/preprocess.py \
     --pinyin_txt $raw/pinyin.utf8 \
     --pos_txt $raw/pos.utf8 \
-    --train $data/train.txt \
-    --test $data/test.txt \
-    --poly_dict $pro_dir/data/high_frequency_word.pickle
+    --train $data/train.json \
+    --test $data/test.json \
+    --poly_dict $raw/high_frequency_word.pickle \
+    --vocab_path $data/vocab.json
+fi
+
+# step 3: train model
+if [ $stage -le 2 ]; then
+  CUDA_VISIBLE_DEVICES=0 python $pro_dir/src/train.py \
+    --rnn_depth 2 \
+    --rnn_num_hidden 64 \
+    --batch_size 16 \
+    --learning_rate 0.001 \
+    --max_epochs 100 \
+    --data_path $data/train.json \
+    --vocab_path $data/vocab.json
 fi

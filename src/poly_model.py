@@ -24,31 +24,45 @@
 
 import tensorflow as tf
 
-class poly_model():
-    def __init__(self, hparams):
+class Poly_Model():
+    def __init__(self, hparams, input_dim, num_class):
         self._hparams = hparams
+        self._input_dim = input_dim
+        self._num_class = num_class
     
-    def initialize(self, inputs, input_lengths, targets):
+    def initialize(self, inputs, target_lengths, targets):
         hp = self._hparams
         outputs = inputs
-        for _ in range(hp.lstm_layers):
-            cell_fw = tf.nn.rnn_cell.LSTMCell(num_units=hp.lstm_size)
-            cell_bw = tf.nn.rnn_cell.LSTMCell(num_units=np.lstm_size)
+        for i in range(hp.rnn_depth):
+            cell_fw = tf.nn.rnn_cell.LSTMCell(num_units=hp.rnn_num_hidden,
+                name="fw_{}".format(i))
+            cell_bw = tf.nn.rnn_cell.LSTMCell(num_units=hp.rnn_num_hidden,
+                name="bw_{}".format(i))
             # inputs [batch_size, T, feats_dim]
-            (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(
-                cell_fw, cell_bw, outputs)
+            (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, 
+                outputs, dtype=tf.float32)
             # A tuple (output_fw, output_bw) [batch_size, max_time, output_size]
             outputs = tf.concat([output_fw, output_bw], axis=2) #[batch_size, max_time, output_size * 2]
-        outputs = tf.layers.Dense(outputs, hp.num_class, activation = tf.nn.relu)
+        outputs = tf.layers.dense(outputs, self._num_class, activation=tf.nn.relu)
 
         self.inputs = inputs
         self.outputs = outputs
         self.targets = targets
-        self.input_lengths = input_lengths
+        self.target_lengths = target_lengths
 
     def add_loss(self):
         # Mask the logits sequence
-        loss = tf.reduce_mean(
-            tf.nn.softmax_cross_entropy_with_logits(
-                logits = pred, labels = y))
+        # [batch_size, T, 1]
+        loss = tf.nn.softmax_cross_entropy_with_logits(
+            logits = self.outputs, labels = self.targets)
+        mask = tf.cast(
+            tf.sequence_mask(self.target_lengths, tf.shape(self.outputs)[1]), tf.float32)
+        loss *= mask
+        loss = tf.reduce_mean(loss)
         self.loss = loss
+
+    def compute_accuracy(self):
+        correct_pred = tf.equal(
+            tf.argmax(self.outputs, 1), tf.argmax(self.targets, 1))
+        accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
+        return accuracy

@@ -29,6 +29,8 @@ import tensorflow as tf
 import threading
 import traceback
 
+from symbol import Symbol
+
 _pad = 0
 
 class DataFeeder(threading.Thread):
@@ -40,6 +42,9 @@ class DataFeeder(threading.Thread):
         self._hparams = hparams
         hp = self._hparams
         self._offset = 0
+        self._symbol = Symbol(hp.vocab_path)
+        self.input_dim = self._symbol.input_dim
+        self.num_class = self._symbol.num_class
 
         with open(hp.data_path, "r") as json_file:
             data = json.load(json_file)
@@ -49,16 +54,17 @@ class DataFeeder(threading.Thread):
             self._metadata=list(zip(data["features"][hp.eval_size:],
                 data["labels"][hp.eval_size:]))
 
+        self.num_samples = len(self._metadata)
         self._placeholders = [
-            tf.placeholder(tf.int32, [None, None], 'inputs'),
-            tf.placeholder(tf.int32, [None], 'input_lengths'),
-            tf.placeholder(tf.int32, [None, None], 'targets')
+            tf.placeholder(tf.float32, [None, None, self.input_dim], 'inputs'),
+            tf.placeholder(tf.int32, [None], 'target_lengths'),
+            tf.placeholder(tf.float32, [None, None, self.num_class], 'targets')
         ]
 
         # Create queue for buffering data:
         self.queue = tf.FIFOQueue(
             hp.queue_capacity,
-            [tf.int32, tf.int32, tf.int32],
+            [tf.float32, tf.int32, tf.float32],
             name='input_queue')
         self._enqueue_op = self.queue.enqueue(self._placeholders)
 
@@ -75,11 +81,11 @@ class DataFeeder(threading.Thread):
             self._coord.request_stop(e)
 
     def dequeue(self):
-        (inputs, input_lengths, targets) = self.queue.dequeue()
+        (inputs, target_lengths, targets) = self.queue.dequeue()
         inputs.set_shape(self._placeholders[0].shape)
-        input_lengths.set_shape(self._placeholders[1].shape)
+        target_lengths.set_shape(self._placeholders[1].shape)
         targets.set_shape(self._placeholders[2].shape)
-        return inputs, input_lengths, targets
+        return inputs, target_lengths, targets
 
     def _enqueue_next_group(self):
         # Read a group of examples:
@@ -91,11 +97,12 @@ class DataFeeder(threading.Thread):
         ]
         # Local sorted for computational efficiency
         examples.sort(key=lambda x: x[-1])
+
         # Bucket examples based on similar output sequence length for efficiency:
-        batches = [examples[i:i + n] for i in range(0, len(examples), n)]
+        batches = [examples[i:i + batch_size] for i in range(0, len(examples), batch_size)]
         random.shuffle(batches)
         for batch in batches:
-            feed_dict = dict(zip(self._placeholders, _prepare_batch(batch, r)))
+            feed_dict = dict(zip(self._placeholders, _prepare_batch(batch)))
             self._session.run(self._enqueue_op, feed_dict=feed_dict)
 
     def _get_next_example(self):
@@ -106,16 +113,16 @@ class DataFeeder(threading.Thread):
         meta = self._metadata[self._offset]
         self._offset += 1
         # TODO
-        input_data = np.asarray(feature_to_sequence(meta[0]), dtype=np.int32)
-        target_data = np.asarray(label_to_sequence(meta[1]), dtype=np.int32)
-        return (input_data, target_data)
+        input_data = np.asarray(self._symbol.feature_to_sequence(meta[0]), dtype=np.float32)
+        target_data = np.asarray(self._symbol.label_to_sequence(meta[1]), dtype=np.float32)
+        return (input_data, target_data, input_data.shape[0])
 
 def _prepare_batch(batch):
     random.shuffle(batch)
     inputs = _prepare([x[0] for x in batch])
-    input_lengths = np.asarray([len(x[0]) for x in batch], dtype=np.int32)
     targets = _prepare([x[1] for x in batch])
-    return (inputs, input_lengths, targets)
+    targets_lengths = np.asarray([x[1].shape[0] for x in batch], dtype=np.int32)
+    return (inputs, targets_lengths, targets)
 
 # batch & pad
 def _prepare(inputs):
@@ -124,4 +131,6 @@ def _prepare(inputs):
 
 def _pad_input(x, length):
     return np.pad(
-        x, (0, length - x.shape[0]), mode='constant', constant_values=_pad)
+        x, [(0, length - x.shape[0]), (0, 0)],
+        mode='constant',
+        constant_values=_pad)
