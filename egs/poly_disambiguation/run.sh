@@ -15,7 +15,7 @@
 #
 # Author: npujcong@gmail.com (congjian)
 
-stage=0
+stage=2
 current_working_dir=$(pwd)
 pro_dir=$(dirname $(dirname $current_working_dir))
 
@@ -23,39 +23,62 @@ thulac_dir=$pro_dir/tools/THULAC/
 model_dir=$pro_dir/models
 raw=$current_working_dir/raw
 data=$current_working_dir/data
+exp=$current_working_dir/exp
 
 # set -euo pipefail
 [ ! -e $data ] && mkdir -p $data
+[ ! -e $exp ] && mkdir -p $exp
 
 # step 0: word segment and pos_tag
 if [ $stage -le 0 ]; then
-  awk -F'\t' '{print $1}' $raw/raw.utf8 > $raw/text.utf8
-  awk -F'\t' '{print $2}' $raw/raw.utf8 > $raw/pinyin.utf8
-  $thulac_dir/build/thulac \
-    -model_dir $thulac_dir/models \
-    -input $raw/text.utf8 \
-    -output $raw/pos.utf8
+  for item in test train
+  do
+    awk -F'\t' '{print $1}' $raw/$item-raw.utf8 > $data/$item-text.utf8
+    awk -F'\t' '{print $2}' $raw/$item-raw.utf8 > $data/$item-pinyin.utf8
+    $thulac_dir/build/thulac \
+      -model_dir $thulac_dir/models \
+      -input $data/$item-text.utf8 \
+      -output $data/$item-pos.utf8
+  done
 fi
 
 # step 1: preprocess data and generate train.txt、test.txt
 if [ $stage -le 1 ]; then
   $pro_dir/src/preprocess.py \
-    --pinyin_txt $raw/pinyin.utf8 \
-    --pos_txt $raw/pos.utf8 \
+    --train_pinyin_txt $data/train-pinyin.utf8 \
+    --train_pos_txt $data/train-pos.utf8 \
+    --test_pinyin_txt $data/test-pinyin.utf8 \
+    --test_pos_txt $data/test-pos.utf8 \
     --train $data/train.json \
     --test $data/test.json \
     --poly_dict $raw/high_frequency_word.pickle \
     --vocab_path $data/vocab.json
 fi
 
-# step 3: train model
+# step 2: train model
 if [ $stage -le 2 ]; then
-  CUDA_VISIBLE_DEVICES=0 python $pro_dir/src/train.py \
+  CUDA_VISIBLE_DEVICES=3 python $pro_dir/src/train.py \
     --rnn_depth 2 \
-    --rnn_num_hidden 64 \
+    --rnn_num_hidden 256 \
     --batch_size 16 \
     --learning_rate 0.001 \
     --max_epochs 100 \
     --data_path $data/train.json \
-    --vocab_path $data/vocab.json
+    --vocab_path $data/vocab.json \
+    --save_dir $exp
+fi
+
+# step 3: test model
+if [ $stage -le 3 ]; then
+  CUDA_VISIBLE_DEVICES=0 python $pro_dir/src/train.py \
+    --decode \
+    --rnn_depth 2 \
+    --rnn_num_hidden 256 \
+    --batch_size 16 \
+    --learning_rate 0.001 \
+    --max_epochs 100 \
+    --data_path $data/test.json \
+    --vocab_path $data/vocab.json \
+    --save_dir $exp \
+    --batch_size 1
 fi

@@ -26,13 +26,20 @@ import numpy as np
 import json
 
 class Symbol():
-    def __init__(self, vocab_path):
+    def __init__(self, vocab_path, poly_dict_path):
+        with open(poly_dict_path, 'r') as f_poly:
+            self._poly_dict = json.load(f_poly)
+
         with open(vocab_path, "r") as json_file:
             data = json.load(json_file)
             self._value_vocab = data["value_vocab"]
             self._pos_vocab = data["pos_vocab"]
             self._poly_vocab = data["poly_vocab"]
-            self.input_dim = len(self._value_vocab.keys()) + 3 * len(self._pos_vocab.keys()) + 2
+            self._poly_word_vocab = data["poly_word2idx"]
+            self._poly_vocab_reverse = {}
+            for (key, value) in self._poly_vocab.items():
+                self._poly_vocab_reverse[value] = key
+            self.input_dim = len(self._value_vocab.keys()) + 3 * len(self._pos_vocab.keys()) + len(self._poly_word_vocab.keys())
             self.num_class = len(self._poly_vocab.keys())
 
     def feature_to_sequence(self, feat):
@@ -40,7 +47,8 @@ class Symbol():
         left_pos = [self._pos_vocab[x[1]] for x in feat]
         right_pos = [self._pos_vocab[x[2]] for x in feat]
         pos = [self._pos_vocab[x[3]] for x in feat]
-        is_poly = [1 if x[4] else 0 for x in feat]
+        is_poly = [self._poly_word_vocab[x[0]] if x[4] else self._poly_word_vocab["NOPOLY"] for x in feat]
+
         # print("feats", feat)
         # print("character", character)
         # print("left", left_pos)
@@ -48,11 +56,25 @@ class Symbol():
         # print("pos", pos)
         # print("is_poly", is_poly)
         return  np.concatenate(
-            (self.onehot(character, len(self._value_vocab.keys())), 
-            self.onehot(left_pos, len(self._pos_vocab.keys())), 
-            self.onehot(right_pos, len(self._pos_vocab.keys())), 
-            self.onehot(pos, len(self._pos_vocab.keys())), 
-            self.onehot(is_poly, 2)), axis=1)
+            (self.onehot(character, len(self._value_vocab.keys())),
+            self.onehot(left_pos, len(self._pos_vocab.keys())),
+            self.onehot(right_pos, len(self._pos_vocab.keys())),
+            self.onehot(pos, len(self._pos_vocab.keys())),
+            self.onehot(is_poly, len(self._poly_word_vocab.keys()))), axis=1)
+
+    def poly_mask(self, feat):
+        # print(feat)
+        poly_mask = np.zeros([len(feat), self.num_class])
+        for row, [character, _, _, _, is_poly] in enumerate(feat):
+            if is_poly:
+                # print(self._poly_dict[character])
+                for poly in self._poly_dict[character]:
+                    poly_mask[row][self._poly_vocab[poly]] = 1
+                    # print(self._poly_vocab[poly])
+            else:
+                poly_mask[row][self._poly_vocab["-"]] = 1
+        # print("POLY MASK:{}".format(np.argmax(poly_mask, 1)))
+        return poly_mask
 
     def label_to_sequence(self, label):
         lab = [self._poly_vocab[x] for x in label]
@@ -63,8 +85,15 @@ class Symbol():
         return:
         [[0, 1, 0, 0, 0],
          [0, 0, 0, 1, 0],
-         [0, 0, 0, 0, 1]] 
+         [0, 0, 0, 0, 1]]
 
     """
+    def sequence_to_label(self, sequence):
+        batch_label = []
+        for i in range(sequence.shape[0]):
+            label = [self._poly_vocab_reverse[x] for x in sequence[i]]
+            batch_label.append(label)
+        return batch_label
+
     def onehot(self, data, dim):
         return np.eye(dim)[data]

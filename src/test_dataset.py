@@ -28,23 +28,29 @@ import sys
 import os
 sys.path.append(os.path.dirname(sys.path[0]))
 
-from src.dataset import DataFeeder
+from dataset import DataFeeder
 
 def test_data(hp):
     coord = tf.train.Coordinator()
     feeder = DataFeeder(coord, hp)
     inputs, input_lengths, targets = feeder.dequeue()
+    pred_seq = tf.subtract(tf.argmax(targets, 2),tf.constant(33, dtype=tf.int64))
+    print("type:",type(pred_seq))
+    poly_mask = tf.cast(pred_seq, dtype=tf.bool)
+    print("type:",type(poly_mask))
     with tf.Session() as sess:
         feeder.start_in_session(sess)
         while(True):
-            a, b, c = sess.run([inputs, input_lengths, targets])
-            print("inputs shape: {}".format(a.shape))
-            print("input_lengths shape: {}".format(b.shape))
+            a, b, c, test_pred, test_poly_mask = sess.run([inputs, input_lengths, targets, pred_seq, poly_mask])
+            # print("inputs shape: {}".format(a.shape))
+            # print("input_lengths shape: {}".format(b.shape))
             print("targets shape: {}".format(c.shape))
 
-            print("inputs: {}".format(a))
-            print("input_lengths : {}".format(b))
+            # print("inputs: {}".format(a))
+            # print("input_lengths : {}".format(b))
             print("targets: {}".format(c))
+            print("pred_seq : {}".format(test_pred))
+            print("poly mask : {}".format(test_poly_mask))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -70,14 +76,14 @@ if __name__ == '__main__':
     parser.add_argument(
         '--data_path',
         type=str,
-        default="/home/work_nfs/jcong/workspace/blstm-chshan/egs/poly_disambiguation/data/train.txt",
+        default="/home/work_nfs/jcong/workspace/POLY/blstm-chshan/egs/poly_disambiguation/data/train.json",
         help='the FIFO queue capacity'
     )
 
     parser.add_argument(
         '--vocab_path',
         type=str,
-        default="/home/work_nfs/jcong/workspace/blstm-chshan/egs/poly_disambiguation/data/vocab.json",
+        default="/home/work_nfs/jcong/workspace/POLY/blstm-chshan/data/vocab.json",
         help='the FIFO queue capacity'
     )
 
@@ -108,7 +114,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--batch_size',
         type=int,
-        default=1,
+        default=2,
         help='Mini-batch size.'
     )
     parser.add_argument(

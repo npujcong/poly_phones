@@ -36,15 +36,16 @@ _pad = 0
 class DataFeeder(threading.Thread):
     '''Feeds batches of data into a queue on a background thread.'''
 
-    def __init__(self, coordinator, hparams):
+    def __init__(self, coordinator, hparams, shuffle):
         super(DataFeeder, self).__init__()
         self._coord = coordinator
         self._hparams = hparams
         hp = self._hparams
         self._offset = 0
-        self._symbol = Symbol(hp.vocab_path)
+        self._symbol = Symbol(hp.vocab_path, hp.poly_dict_path)
         self.input_dim = self._symbol.input_dim
         self.num_class = self._symbol.num_class
+        self.shuffle = shuffle
 
         with open(hp.data_path, "r") as json_file:
             data = json.load(json_file)
@@ -58,13 +59,14 @@ class DataFeeder(threading.Thread):
         self._placeholders = [
             tf.placeholder(tf.float32, [None, None, self.input_dim], 'inputs'),
             tf.placeholder(tf.int32, [None], 'target_lengths'),
-            tf.placeholder(tf.float32, [None, None, self.num_class], 'targets')
+            tf.placeholder(tf.float32, [None, None, self.num_class], 'targets'),
+            tf.placeholder(tf.float32, [None, None, self.num_class], 'poly_mask')
         ]
 
         # Create queue for buffering data:
         self.queue = tf.FIFOQueue(
             hp.queue_capacity,
-            [tf.float32, tf.int32, tf.float32],
+            [tf.float32, tf.int32, tf.float32, tf.float32],
             name='input_queue')
         self._enqueue_op = self.queue.enqueue(self._placeholders)
 
@@ -81,11 +83,12 @@ class DataFeeder(threading.Thread):
             self._coord.request_stop(e)
 
     def dequeue(self):
-        (inputs, target_lengths, targets) = self.queue.dequeue()
+        (inputs, target_lengths, targets, poly_mask) = self.queue.dequeue()
         inputs.set_shape(self._placeholders[0].shape)
         target_lengths.set_shape(self._placeholders[1].shape)
         targets.set_shape(self._placeholders[2].shape)
-        return inputs, target_lengths, targets
+        poly_mask.set_shape(self._placeholders[3].shape)
+        return inputs, target_lengths, targets, poly_mask
 
     def _enqueue_next_group(self):
         # Read a group of examples:
@@ -96,33 +99,39 @@ class DataFeeder(threading.Thread):
             for i in range(batch_size * batches_per_group)
         ]
         # Local sorted for computational efficiency
-        examples.sort(key=lambda x: x[-1])
+        if self.shuffle:
+            examples.sort(key=lambda x: x[-2])
 
         # Bucket examples based on similar output sequence length for efficiency:
         batches = [examples[i:i + batch_size] for i in range(0, len(examples), batch_size)]
-        random.shuffle(batches)
+        if self.shuffle:
+            random.shuffle(batches)
         for batch in batches:
-            feed_dict = dict(zip(self._placeholders, _prepare_batch(batch)))
+            feed_dict = dict(zip(self._placeholders, _prepare_batch(batch, self.shuffle)))
             self._session.run(self._enqueue_op, feed_dict=feed_dict)
 
     def _get_next_example(self):
         '''Loads a single example (input, mel_target, linear_target, cost) from disk'''
         if self._offset >= len(self._metadata):
             self._offset = 0
-            random.shuffle(self._metadata)
+            if self.shuffle:
+                random.shuffle(self._metadata)
         meta = self._metadata[self._offset]
         self._offset += 1
         # TODO
         input_data = np.asarray(self._symbol.feature_to_sequence(meta[0]), dtype=np.float32)
         target_data = np.asarray(self._symbol.label_to_sequence(meta[1]), dtype=np.float32)
-        return (input_data, target_data, input_data.shape[0])
+        poly_mask = np.asarray(self._symbol.poly_mask(meta[0]), dtype = np.float32)
+        return (input_data, target_data, input_data.shape[0], poly_mask)
 
-def _prepare_batch(batch):
-    random.shuffle(batch)
+def _prepare_batch(batch, shuffle):
+    if shuffle:
+        random.shuffle(batch)
     inputs = _prepare([x[0] for x in batch])
     targets = _prepare([x[1] for x in batch])
     targets_lengths = np.asarray([x[1].shape[0] for x in batch], dtype=np.int32)
-    return (inputs, targets_lengths, targets)
+    poly_mask = _prepare([x[3] for x in batch])
+    return (inputs, targets_lengths, targets, poly_mask)
 
 # batch & pad
 def _prepare(inputs):

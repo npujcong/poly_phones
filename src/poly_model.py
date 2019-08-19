@@ -29,17 +29,20 @@ class Poly_Model():
         self._hparams = hparams
         self._input_dim = input_dim
         self._num_class = num_class
-    
-    def initialize(self, inputs, target_lengths, targets):
+
+    def initialize(self, inputs, target_lengths, targets, poly_mask):
         hp = self._hparams
         outputs = inputs
+        for i in range(hp.dnn_depth):
+            outputs = tf.layers.dense(outputs, hp.dnn_num_hidden, activation=tf.nn.relu,
+                name="dnn_{}".format(i))
         for i in range(hp.rnn_depth):
             cell_fw = tf.nn.rnn_cell.LSTMCell(num_units=hp.rnn_num_hidden,
                 name="fw_{}".format(i))
             cell_bw = tf.nn.rnn_cell.LSTMCell(num_units=hp.rnn_num_hidden,
                 name="bw_{}".format(i))
             # inputs [batch_size, T, feats_dim]
-            (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, 
+            (output_fw, output_bw), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw,
                 outputs, dtype=tf.float32)
             # A tuple (output_fw, output_bw) [batch_size, max_time, output_size]
             outputs = tf.concat([output_fw, output_bw], axis=2) #[batch_size, max_time, output_size * 2]
@@ -49,20 +52,30 @@ class Poly_Model():
         self.outputs = outputs
         self.targets = targets
         self.target_lengths = target_lengths
+        self.poly_mask = poly_mask
+
+        # accuracy & pred
+        target_seq = tf.argmax(self.targets, 2)
+        poly_mask = tf.cast(tf.cast(target_seq, dtype=tf.bool), tf.int64)
+
+        pred = tf.argmax(self.outputs  * self.poly_mask, 2)
+        correct_pred = tf.cast(tf.equal(pred, target_seq), tf.int64) * poly_mask
+        accuracy = tf.reduce_sum(correct_pred) / tf.reduce_sum(poly_mask)
+
+        self.pred = tf.argmax(self.outputs, 2)
+        self.accuracy = accuracy
+        self.target_seq = target_seq
+
 
     def add_loss(self):
         # Mask the logits sequence
         # [batch_size, T, 1]
         loss = tf.nn.softmax_cross_entropy_with_logits(
             logits = self.outputs, labels = self.targets)
+        # loss: [batch_size, T]
+        # mask: [batch_size, T]
         mask = tf.cast(
             tf.sequence_mask(self.target_lengths, tf.shape(self.outputs)[1]), tf.float32)
-        loss *= mask
+        loss *= mask # [batch_size, T]
         loss = tf.reduce_mean(loss)
         self.loss = loss
-
-    def compute_accuracy(self):
-        correct_pred = tf.equal(
-            tf.argmax(self.outputs, 1), tf.argmax(self.targets, 1))
-        accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
-        return accuracy
