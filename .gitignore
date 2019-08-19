@@ -3,3 +3,5 @@ src/__pycache__/
 egs/*
 pyqueue_asr.pl
 pyqueue_tts.pl
+tools/
+data
