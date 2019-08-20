@@ -15,7 +15,7 @@
 #
 # Author: npujcong@gmail.com (congjian)
 
-stage=2
+stage=$1
 current_working_dir=$(pwd)
 pro_dir=$(dirname $(dirname $current_working_dir))
 
@@ -52,33 +52,56 @@ if [ $stage -le 1 ]; then
     --train $data/train.json \
     --test $data/test.json \
     --poly_dict $raw/high_frequency_word.pickle \
-    --vocab_path $data/vocab.json
+    --vocab_path $data/vocab.json \
+    --poly_pinyin_dict $data/poly_pinyin_dict.json
 fi
 
 # step 2: train model
 if [ $stage -le 2 ]; then
-  CUDA_VISIBLE_DEVICES=3 python $pro_dir/src/train.py \
+  CUDA_VISIBLE_DEVICES=2 python $pro_dir/src/train.py \
+    --dnn_depth 1 \
+    --dnn_num_hidden 64 \
     --rnn_depth 2 \
     --rnn_num_hidden 256 \
-    --batch_size 16 \
-    --learning_rate 0.001 \
-    --max_epochs 100 \
-    --data_path $data/train.json \
-    --vocab_path $data/vocab.json \
-    --save_dir $exp
-fi
-
-# step 3: test model
-if [ $stage -le 3 ]; then
-  CUDA_VISIBLE_DEVICES=0 python $pro_dir/src/train.py \
-    --decode \
-    --rnn_depth 2 \
-    --rnn_num_hidden 256 \
-    --batch_size 16 \
+    --batch_size 1 \
     --learning_rate 0.001 \
     --max_epochs 100 \
     --data_path $data/test.json \
     --vocab_path $data/vocab.json \
     --save_dir $exp \
-    --batch_size 1
+    --poly_dict_path $data/poly_pinyin_dict.json
+fi
+
+# step 3: test model
+if [ $stage -le 3 ]; then
+  CUDA_VISIBLE_DEVICES= python $pro_dir/src/train.py \
+    --decode \
+    --dnn_depth 1 \
+    --dnn_num_hidden 64 \
+    --rnn_depth 2 \
+    --rnn_num_hidden 256 \
+    --batch_size 1 \
+    --learning_rate 0.001 \
+    --max_epochs 100 \
+    --data_path $data/test.json \
+    --vocab_path $data/vocab.json \
+    --save_dir $exp \
+    --poly_dict_path $data/poly_pinyin_dict.json
+fi
+
+# step 4: test model decode
+if [ $stage -le 4 ]; then
+  CUDA_VISIBLE_DEVICES= python $pro_dir/src/test_train.py \
+    --decode \
+    --dnn_depth 1 \
+    --dnn_num_hidden 64 \
+    --rnn_depth 2 \
+    --rnn_num_hidden 256 \
+    --batch_size 2 \
+    --learning_rate 0.001 \
+    --max_epochs 100 \
+    --data_path $data/test.json \
+    --vocab_path $data/vocab.json \
+    --save_dir $exp \
+    --poly_dict_path $data/poly_pinyin_dict.json
 fi

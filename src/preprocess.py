@@ -126,7 +126,7 @@ def build_vocab_idx(dataset, vocab_path):
 
     poly_word2idx = {}
     poly_word2idx["NOPOLY"] = len(poly_word2idx)
-    for poly_word in POLY_DICT.keys():
+    for poly_word in POLY_PINYIN_DICT.keys():
         poly_word2idx[poly_word] = len(poly_word2idx)
 
     seq2id = {

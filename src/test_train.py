@@ -41,88 +41,8 @@ def restore_from_ckpt(sess, saver, save_dir):
         tf.logging.fatal("checkpoint not found")
         return False
 
-def train_one_epoch(sess, train_step, train_loss, train_accuracy,
-    merged, summary_writer, global_step, batchs_per_epoch):
-    tr_loss = 0
-    tr_acc = 0
-    for step in range(batchs_per_epoch):
-        # wirte summary every 50 step except step==0
-        if step % 1000 == 999:
-            _, loss, acc, summary, step = sess.run([train_step, train_loss,
-                train_accuracy, merged, global_step])
-            summary_writer.add_summary(summary, step)
-            tf.logging.info("Writing Summary At Step {}".format(step))
-        else:
-            _, loss, acc = sess.run([train_step, train_loss, train_accuracy])
-        tr_loss += loss
-        tr_acc += acc
-    tr_loss /= float(batchs_per_epoch)
-    tr_acc /= float(batchs_per_epoch)
-    return tr_loss, tr_acc
-
-def train(hparams):
+def test_decode(hparams):
     hp = hparams
-    # data_feeder
-    coord = tf.train.Coordinator()
-    feeder = DataFeeder(coord, hp, True)
-    numbatchs_per_epoch = int(feeder.num_samples / hp.batch_size)
-    tf.logging.info("Num Batchs Per Epoch : {}".format(numbatchs_per_epoch))
-
-
-    # construct model
-    inputs, target_lengths, targets, poly_mask = feeder.dequeue()
-    model = Poly_Model(hp, feeder.input_dim, feeder.num_class)
-    model.initialize(inputs, target_lengths, targets, poly_mask)
-    model.add_loss()
-    loss = model.loss
-    train_accuracy = model.accuracy
-
-
-    # loss & optimizer
-    global_step = tf.get_variable(
-        name="global_step",
-        shape=[],
-        dtype=tf.int64,
-        initializer=tf.zeros_initializer(),
-        trainable=False,
-        collections=[tf.GraphKeys.GLOBAL_VARIABLES, tf.GraphKeys.GLOBAL_STEP])
-    trainable_variables = tf.trainable_variables()
-    print(trainable_variables)
-    learning_rate = tf.train.exponential_decay(hp.learning_rate, global_step,
-        numbatchs_per_epoch, 0.8, staircase=True)
-    # learning_rate = tf.get_variable("learning_rate", shape=[],dtype=tf.float32,
-    #     initializer=tf.constant_initializer(hp.learning_rate))
-    optimizer = tf.train.AdamOptimizer(learning_rate)
-    grads, _ = tf.clip_by_global_norm(
-        tf.gradients(loss, trainable_variables), hp.max_grad_norm)
-    train_step = optimizer.apply_gradients(
-        zip(grads, trainable_variables),
-        global_step=global_step)
-
-    # summary
-    tf.summary.scalar("loss", loss)
-    tf.summary.scalar("learning_rate", learning_rate)
-    merge_all = tf.summary.merge_all()
-    saver = tf.train.Saver(max_to_keep=hp.max_epochs)
-    config = tf.ConfigProto()
-
-    with tf.Session(config=config) as sess:
-        feeder.start_in_session(sess)
-        sess.run(tf.global_variables_initializer())
-        summary_writer = tf.summary.FileWriter(os.path.join(hp.save_dir, "nnet"), sess.graph)
-        if hp.resume_training:
-            restore_from_ckpt(sess, saver, hp.save_dir)
-        for epoch in range(hp.max_epochs):
-            tr_loss, tr_acc = train_one_epoch(sess, train_step, loss, train_accuracy,
-                merge_all, summary_writer, global_step, numbatchs_per_epoch)
-            tf.logging.info("Epoch:{} TRIAIN LOSS: {} TRAIN ACCURACY: {}".format(epoch, tr_loss, tr_acc))
-            checkpoint_path = os.path.join(hp.save_dir, "nnet", "Epoch-{}-ACC-{}".format(epoch, tr_acc))
-            saver.save(sess, checkpoint_path)
-            tf.logging.info("Saving Checkpint At {}".format(checkpoint_path))
-
-def decode(hparams):
-    hp = hparams
-    # data_feeder
     coord = tf.train.Coordinator()
     feeder = DataFeeder(coord, hp, False)
     symbol = Symbol(hp.vocab_path, hp.poly_dict_path)
@@ -131,8 +51,6 @@ def decode(hparams):
     inputs, target_lengths, targets, poly_mask = feeder.dequeue()
     model = Poly_Model(hp, feeder.input_dim, feeder.num_class)
     model.initialize(inputs, target_lengths, targets, poly_mask)
-    test_accuracy = model.accuracy
-    predict_seq = model.pred
 
     saver = tf.train.Saver()
     with tf.Session() as sess:
@@ -142,24 +60,25 @@ def decode(hparams):
         test_acc = 0
         num_batchs = int(feeder.num_samples / hp.batch_size)
         tmp=0
-        correct = 0
-        total = 0
+        np.set_printoptions(precision=3)
+
         for i in range(num_batchs):
             # print(i)
-            pred, acc, a, c, tag = sess.run([predict_seq, test_accuracy, model.outputs, targets, model.target_seq])
-            # print(pred)
-            # print(a)
-            # print(b)
-            # print(c)
-            # print("Pred Seq: {}".format(pred))
-            # print(a)
+            correct = 0
+            total = 0
+            model_pre, model_acc, model_outputs, model_targets, model_target_seq \
+                = sess.run([model.pred, model.accuracy, model.outputs, model.targets, model.target_seq])
+            print(model_pre)
+            print(model_acc)
+            print(model_outputs)
+            print(model_targets)
+            print(model_target_seq)
             # np.savetxt("{}.out".format(tmp), a[0], fmt='%1.4e')
-            # print(pred)
-            for pred_poly_seq in symbol.sequence_to_label(pred):
+            for pred_poly_seq in symbol.sequence_to_label(model_pre):
                 print("\t".join(pred_poly_seq))
-            for ta in symbol.sequence_to_label(tag):
+            for ta in symbol.sequence_to_label(model_target_seq):
                 print("\t".join(ta))
-            for pred_poly_seq, ta in zip(symbol.sequence_to_label(pred),symbol.sequence_to_label(tag)):
+            for pred_poly_seq, ta in zip(symbol.sequence_to_label(model_pre),symbol.sequence_to_label(model_target_seq)):
                 if len(pred_poly_seq) != len(ta):
                     print("length not equal")
                     print("-----------------")
@@ -170,12 +89,8 @@ def decode(hparams):
                     if p == t:
                         correct += 1
                     total += 1
-            test_acc += acc
-            tmp += 1
-        test_acc /= float(num_batchs)
-        tf.logging.info("Test Accuracy : {}".format(test_acc))
-        tf.logging.info("Test Accuracy New: {}".format(float(correct)/float(total)))
-
+            print("Model Accuracy: {}".format(model_acc))
+            print("Test  Accuracy New: {}".format(float(correct)/float(total)))
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -208,19 +123,19 @@ if __name__ == '__main__':
     parser.add_argument(
         '--data_path',
         type=str,
-        default="/home/work_nfs/jcong/workspace/blstm-chshan/egs/poly_disambiguation/data/train.json",
+        default="data/train.json",
         help='the FIFO queue capacity'
     )
     parser.add_argument(
         '--vocab_path',
         type=str,
-        default="/home/work_nfs/jcong/workspace/blstm-chshan/egs/poly_disambiguation/data/vocab.json",
+        default="data/vocab.json",
         help='the FIFO queue capacity'
     )
     parser.add_argument(
         '--save_dir',
         type=str,
-        default="/home/work_nfs/jcong/workspace/blstm-chshan/egs/poly_disambiguation/exp/",
+        default="exp/",
         help='the FIFO queue capacity'
     )
     parser.add_argument(
@@ -276,7 +191,4 @@ if __name__ == '__main__':
         default="data/poly_pinyin_dict.json"
     )
     hp = parser.parse_args()
-    if hp.decode:
-        decode(hp)
-    else:
-        train(hp)
+    test_decode(hp)

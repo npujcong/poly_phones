@@ -34,7 +34,7 @@ class Poly_Model():
         hp = self._hparams
         outputs = inputs
         for i in range(hp.dnn_depth):
-            outputs = tf.layers.dense(outputs, hp.dnn_num_hidden, activation=tf.nn.relu,
+            outputs = tf.layers.dense(outputs, hp.dnn_num_hidden, activation=tf.nn.sigmoid,
                 name="dnn_{}".format(i))
         for i in range(hp.rnn_depth):
             cell_fw = tf.nn.rnn_cell.LSTMCell(num_units=hp.rnn_num_hidden,
@@ -46,10 +46,10 @@ class Poly_Model():
                 outputs, dtype=tf.float32)
             # A tuple (output_fw, output_bw) [batch_size, max_time, output_size]
             outputs = tf.concat([output_fw, output_bw], axis=2) #[batch_size, max_time, output_size * 2]
-        outputs = tf.layers.dense(outputs, self._num_class, activation=tf.nn.relu)
+        outputs = tf.layers.dense(outputs, self._num_class, activation=None)
 
         self.inputs = inputs
-        self.outputs = outputs
+        self.outputs = tf.nn.softmax(outputs)
         self.targets = targets
         self.target_lengths = target_lengths
         self.poly_mask = poly_mask
@@ -62,9 +62,10 @@ class Poly_Model():
         correct_pred = tf.cast(tf.equal(pred, target_seq), tf.int64) * poly_mask
         accuracy = tf.reduce_sum(correct_pred) / tf.reduce_sum(poly_mask)
 
-        self.pred = tf.argmax(self.outputs, 2)
+        self.pred = pred
         self.accuracy = accuracy
         self.target_seq = target_seq
+        self.poly_mask = poly_mask
 
 
     def add_loss(self):
@@ -77,5 +78,6 @@ class Poly_Model():
         mask = tf.cast(
             tf.sequence_mask(self.target_lengths, tf.shape(self.outputs)[1]), tf.float32)
         loss *= mask # [batch_size, T]
+        # loss *= tf.cast(self.poly_mask, tf.float32)
         loss = tf.reduce_mean(loss)
         self.loss = loss

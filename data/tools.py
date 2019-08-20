@@ -26,6 +26,7 @@ from collections import defaultdict
 import codecs
 import json
 import pickle
+from pypinyin import style
 
 def create_poly_dic():
     poly_dict = defaultdict(list)
@@ -34,9 +35,11 @@ def create_poly_dic():
     for item in [x for x in lines if x != '\n']:
         words = item.strip().split()
         for p in words[1].split(','):
-            poly_dict[words[-1]].append(p)
-    with open('polyphones.pickle', 'wb') as f:
-        pickle.dump(poly_dict, f)
+            tmp_p = style.convert(p, style=8, strict=False)
+            poly_dict[words[-1]].append(tmp_p)
+    json_str = json.dumps(poly_dict, ensure_ascii=False, indent=2)
+    with open('polyphones.json', "w") as json_file:
+        json_file.write(json_str)
 
 def count_poly_words():
     poly_word_count=defaultdict(int)
@@ -56,10 +59,8 @@ def count_poly_words():
         pickle.dump(high_frequency_word, f)
 
 if __name__ == '__main__':
-    # create_poly_dic()
-    # with open('polyphones.pickle', 'rb') as f:
-    #     data = pickle.load(f)
+    create_poly_dic()
     count_poly_words()
     with open('high_frequency_word.pickle', 'rb') as f:
         data = pickle.load(f)
-    print(data)
+        print(data)
