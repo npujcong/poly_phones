@@ -148,8 +148,10 @@ def build_vocab_idx(dataset, vocab_path):
 
     poly_word2idx = {}
     poly_word2idx["NOPOLY"] = len(poly_word2idx)
+    print("POLY_PINYIN_DICT", POLY_PINYIN_DICT)
     for poly_word in POLY_PINYIN_DICT.keys():
-        poly_word2idx[poly_word] = len(poly_word2idx)
+        if len(POLY_PINYIN_DICT[poly_word]) >= 2:
+            poly_word2idx[poly_word] = len(poly_word2idx)
 
     seq2id = {
         "value_vocab": word2idx,
@@ -223,11 +225,20 @@ if __name__ == '__main__':
         POLY_DICT = json.load(f_poly)
     train_corpus = process_raw(args.train_pinyin_txt, args.train_pos_txt)
     test_corpus = process_raw(args.test_pinyin_txt, args.test_pos_txt)
+
     for sentence in train_corpus + test_corpus:
         for words in sentence:
             for i, item in enumerate(words["value"]):
                 if words["ispoly"] and i == words["poly_index"]:
                     POLY_PINYIN_DICT[item].add(words["pinyin"][words["poly_index"]])
+    
+    keys = list(POLY_PINYIN_DICT.keys())
+    print(keys)
+    for k in keys:
+        if len(POLY_PINYIN_DICT[k]) < 2:
+            del POLY_PINYIN_DICT[k]
+    print(POLY_PINYIN_DICT)
+
 
     test_dataset = construct_dataset(test_corpus, args.test)
     train_dataset = construct_dataset(train_corpus, args.train)
