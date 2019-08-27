@@ -36,9 +36,8 @@ class Symbol():
             self._pos_vocab = data["pos_vocab"]
             self._poly_vocab = data["poly_vocab"]
             self._poly_word_vocab = data["poly_word2idx"]
-            self._poly_vocab_reverse = {}
-            for (key, value) in self._poly_vocab.items():
-                self._poly_vocab_reverse[value] = key
+            self._poly_vocab_reverse = {v: k for k, v in self._poly_vocab.items()}
+            self._value_vocab_reverse = {v: k for k, v in self._value_vocab.items()}
             self.input_dim = len(self._value_vocab.keys()) + 3 * len(self._pos_vocab.keys()) + len(self._poly_word_vocab.keys())
             self.num_class = len(self._poly_vocab.keys())
 
@@ -80,6 +79,18 @@ class Symbol():
         lab = [self._poly_vocab[x] for x in label]
         lab_onehot = self.onehot(lab, len(self._poly_vocab.keys()))
         return lab_onehot
+
+    def input_to_word_value(self,sequence):
+        word_value_seq = np.argmax(sequence[:,:len(self._value_vocab.keys())], 1)
+        print(word_value_seq)
+        word_value = [self._value_vocab_reverse[x] for x in word_value_seq]
+        return word_value
+
+    def sequence_to_label(self, sequence):
+        label = [self._poly_vocab_reverse[x] for x in sequence]
+        return label
+
+
     """
         data: [1, 3, 4]
         return:
@@ -88,12 +99,5 @@ class Symbol():
          [0, 0, 0, 0, 1]]
 
     """
-    def sequence_to_label(self, sequence):
-        batch_label = []
-        for i in range(sequence.shape[0]):
-            label = [self._poly_vocab_reverse[x] for x in sequence[i]]
-            batch_label.append(label)
-        return batch_label
-
     def onehot(self, data, dim):
         return np.eye(dim)[data]

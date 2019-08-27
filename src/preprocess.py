@@ -21,7 +21,7 @@
 # Date 2019/07/30 16:44:54
 #
 ######################################################################
-
+# 较不满意、一般、较满意、满意）相应位置打号。
 import argparse
 import json
 import random
@@ -32,7 +32,14 @@ from collections import defaultdict
 POLY_DICT={}
 POLY_PINYIN_DICT=defaultdict(set)
 
-PUNCTUATION = ['', ' ', '№', '﹙', '\n', '﹐', '┅', '︰', '﹗', '°', '―', '─', '．', '﹚', 'ˉ', '∶', '′'] + list(punctuation + string.punctuation)
+# 两个汉字之间有空格
+PUNCTUATION = list(punctuation + string.punctuation)
+
+def contain_punc(input_str):
+    for item in input_str:
+        if item in PUNCTUATION:
+            return True
+    return False
 
 class words:
     def __init__(self, value, pos, pinyin):
@@ -45,6 +52,11 @@ class words:
         for i, item in enumerate(value):
             if item in POLY_DICT.keys():
                 self._poly_index = i
+                # 强制修正数据
+                if item == "哈" and self._pinyin[i] == "ha5":
+                    self._pinyin[i] = "ha1"
+                if not self._pinyin[i] in POLY_DICT[item]:
+                    print("not in POLY_DICT", self._pinyin[i], item)
                 return True
         self._poly_index = None
         return False
@@ -79,28 +91,38 @@ def process_raw(pinyin_txt, pos_txt):
     sentence, corpus = [],[]
     sentence_index = 0
     fout_bug = open("data_bug.txt", "w")
-
     for sentence_index, line in enumerate(pos_lines):
-        try:
-            character_index = 0
-            sentence = []
-            for [value, _, pos] in [item.split("_") for item in line.strip().split(" ")]:
-                if value not in PUNCTUATION:
-                    pinyin = pinyin_lines[sentence_index][character_index : character_index + len(value)]
-                    character_index += len(value)
-                    w = words(value, pos, pinyin)
-                else:
-                    w = words(value, pos, None)
-                sentence.append(w.get())
-                print(w.get())
-            print("\n")
-            if (character_index) != len(pinyin_lines[sentence_index]):
-                fout_bug.write("儿化音：{}\n".format(line))
-                continue
+        flag=True
+        character_index = 0
+        sentence = []
+        for item in line.strip().split(" "):
+            if len(item.split("_")) != 3:
+                print("BUG:{}".format(line))
+                break
+            [value, _, pos] = item.split("_")
+            if value not in PUNCTUATION:
+                if contain_punc(value):
+                    print("BUG:{}".format(line))
+                    break
+                pinyin = pinyin_lines[sentence_index][character_index : character_index + len(value)]
+                character_index += len(value)
+                if len(value) != len(pinyin):
+                    print("bug", value,pinyin,len(value),len(pinyin))
+                    flag=False
+                    break
+                w = words(value, pos, pinyin)
+            else:
+                w = words(value, pos, None)
+            sentence.append(w.get())
+            print(w.get())
+        print("\n")
+        if (character_index) != len(pinyin_lines[sentence_index]):
+            print(character_index)
+            print(len(pinyin_lines[sentence_index]))
+            fout_bug.write("儿化音：{}\n".format(line))
+            continue
+        if flag:
             corpus.append(sentence)
-        except Exception as e:
-            fout_bug.write(line + "\n")
-            print(e)
     return corpus
 
 def build_vocab_idx(dataset, vocab_path):
@@ -174,7 +196,7 @@ def construct_sentence_feature(sentence):
             right_index = i + 1 if (i + 1) < len(sentence) else i
             left_neighbour_pos = sentence[left_index]["pos"]
             right_neighbour_pos = sentence[right_index]["pos"]
-            if word["ispoly"] and character_index == poly_index:
+            if word["ispoly"] and character_index == poly_index and len(POLY_PINYIN_DICT[value]) > 1:
                 label.append(word["pinyin"][poly_index])
                 ispoly = True
             else:
@@ -195,25 +217,21 @@ if __name__ == '__main__':
     parser.add_argument("--poly_dict", default="data/poly_dict")
     parser.add_argument("--vocab_path", default="data/vocab.json")
     parser.add_argument("--poly_pinyin_dict", default="data/poly_pinyin_dict.json")
-
     args = parser.parse_args()
-    with open(args.poly_dict, 'rb') as f_poly:
-        POLY_DICT = pickle.load(f_poly)
-        POLY_DICT["丧"] = 1
 
+    with open(args.poly_dict, 'r') as f_poly:
+        POLY_DICT = json.load(f_poly)
     train_corpus = process_raw(args.train_pinyin_txt, args.train_pos_txt)
-    train_dataset = construct_dataset(train_corpus, args.train)
-
     test_corpus = process_raw(args.test_pinyin_txt, args.test_pos_txt)
-    test_dataset = construct_dataset(test_corpus, args.test)
-
     for sentence in train_corpus + test_corpus:
         for words in sentence:
             for i, item in enumerate(words["value"]):
                 if words["ispoly"] and i == words["poly_index"]:
                     POLY_PINYIN_DICT[item].add(words["pinyin"][words["poly_index"]])
 
-
+    test_dataset = construct_dataset(test_corpus, args.test)
+    train_dataset = construct_dataset(train_corpus, args.train)
+    print(train_corpus)
     dataset = {
         "features": train_dataset["features"] + test_dataset["features"],
         "labels": train_dataset["labels"] + test_dataset["labels"]

@@ -36,6 +36,9 @@ def create_poly_dic():
         words = item.strip().split()
         for p in words[1].split(','):
             tmp_p = style.convert(p, style=8, strict=False)
+            # 注意：原始文件中轻声是没有音调的，但在我们的数据集中轻声是用5表示的
+            if tmp_p[-1] not in ['1','2','3','4']:
+                tmp_p += '5'
             poly_dict[words[-1]].append(tmp_p)
     json_str = json.dumps(poly_dict, ensure_ascii=False, indent=2)
     with open('polyphones.json', "w") as json_file:
@@ -60,7 +63,7 @@ def count_poly_words():
 
 if __name__ == '__main__':
     create_poly_dic()
-    count_poly_words()
-    with open('high_frequency_word.pickle', 'rb') as f:
-        data = pickle.load(f)
-        print(data)
+    # count_poly_words()
+    # with open('high_frequency_word.pickle', 'rb') as f:
+    #     data = pickle.load(f)
+    #     print(data)

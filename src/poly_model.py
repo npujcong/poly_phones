@@ -52,21 +52,20 @@ class Poly_Model():
         self.outputs = tf.nn.softmax(outputs)
         self.targets = targets
         self.target_lengths = target_lengths
+        self.mask = tf.cast(
+            tf.sequence_mask(self.target_lengths, tf.shape(self.outputs)[1]), tf.float32)
+        self.target_seq = tf.argmax(self.targets, 2)
         self.poly_mask = poly_mask
 
         # accuracy & pred
-        target_seq = tf.argmax(self.targets, 2)
-        poly_mask = tf.cast(tf.cast(target_seq, dtype=tf.bool), tf.int64)
-
         pred = tf.argmax(self.outputs  * self.poly_mask, 2)
-        correct_pred = tf.cast(tf.equal(pred, target_seq), tf.int64) * poly_mask
-        accuracy = tf.reduce_sum(correct_pred) / tf.reduce_sum(poly_mask)
+        poly_index = tf.cast(tf.cast(self.target_seq, dtype=tf.bool), tf.float32)
+        correct_pred = tf.cast(tf.equal(pred, self.target_seq), tf.float32) * poly_index 
+        accuracy = tf.reduce_sum(correct_pred) / tf.reduce_sum(poly_index)
 
         self.pred = pred
         self.accuracy = accuracy
-        self.target_seq = target_seq
-        self.poly_mask = poly_mask
-
+        self.correct_pred = correct_pred
 
     def add_loss(self):
         # Mask the logits sequence
@@ -75,9 +74,7 @@ class Poly_Model():
             logits = self.outputs, labels = self.targets)
         # loss: [batch_size, T]
         # mask: [batch_size, T]
-        mask = tf.cast(
-            tf.sequence_mask(self.target_lengths, tf.shape(self.outputs)[1]), tf.float32)
-        loss *= mask # [batch_size, T]
+        loss *= self.mask # [batch_size, T]
         # loss *= tf.cast(self.poly_mask, tf.float32)
         loss = tf.reduce_mean(loss)
         self.loss = loss

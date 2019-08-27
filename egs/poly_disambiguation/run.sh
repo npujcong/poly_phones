@@ -25,7 +25,7 @@ raw=$current_working_dir/raw
 data=$current_working_dir/data
 exp=$current_working_dir/exp
 
-# set -euo pipefail
+set -euo pipefail
 [ ! -e $data ] && mkdir -p $data
 [ ! -e $exp ] && mkdir -p $exp
 
@@ -51,7 +51,7 @@ if [ $stage -le 1 ]; then
     --test_pos_txt $data/test-pos.utf8 \
     --train $data/train.json \
     --test $data/test.json \
-    --poly_dict $raw/high_frequency_word.pickle \
+    --poly_dict $raw/polyphones.json \
     --vocab_path $data/vocab.json \
     --poly_pinyin_dict $data/poly_pinyin_dict.json
 fi

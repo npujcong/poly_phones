@@ -45,6 +45,8 @@ def test_symbol(vocab_path, data_path, poly_dict_path):
         print(target_data)
         print("poly_mask"+"="*50)
         print(poly_mask)
+        print("sequence to feature value " + "=" * 50)
+        print(symbol.input_to_word_value(input_data))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

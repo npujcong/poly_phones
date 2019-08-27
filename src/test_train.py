@@ -31,6 +31,7 @@ from poly_model import Poly_Model
 from dataset import DataFeeder
 from symbol import  Symbol
 import numpy as np
+import json
 
 def restore_from_ckpt(sess, saver, save_dir):
     ckpt = tf.train.get_checkpoint_state(os.path.join(save_dir, "nnet"))
@@ -41,56 +42,72 @@ def restore_from_ckpt(sess, saver, save_dir):
         tf.logging.fatal("checkpoint not found")
         return False
 
+def count_polY_accuracy(model, num_batchs, sess, save_dir):
+    symbol = Symbol(hp.vocab_path, hp.poly_dict_path)
+    with open(hp.poly_dict_path, 'r') as f:
+        POLY_DICT = json.load(f)
+    test_poly_dict = {}
+    for key, value in POLY_DICT.items():
+        POLY_DICT[key] = sorted(value)
+        test_poly_dict[key] = np.zeros((len(value),len(value)))
+    for i in range(num_batchs):
+        model_inputs, model_pre, mask, poly_mask, model_correct_pred, model_acc, model_outputs, model_targets, model_target_seq \
+            = sess.run([model.inputs, model.pred, model.mask, model.poly_mask, model.correct_pred, model.accuracy, model.outputs, model.targets, model.target_seq])
+        print("model_pred", model_pre)
+        print("model_accruacy", model_acc)
+        print("model_outputs", model_outputs)
+        print("model_mask", mask)
+        print("model_poly_mask", poly_mask)
+        print("model_targets", model_targets)
+        print("model_target_seq", model_target_seq)
+        print("model_correct_pred",  model_correct_pred)
+        for pred_poly_seq, ta, model_input in zip(model_pre, model_target_seq, model_inputs):
+            pred_poly = symbol.sequence_to_label(pred_poly_seq)
+            target_poly = symbol.sequence_to_label(ta)
+            word_value = symbol.input_to_word_value(model_input)
+            print(pred_poly)
+            print(target_poly)
+            print(word_value)
+            if len(pred_poly_seq) != len(ta):
+                print("length not equal")
+                print("-----------------")
+                continue
+            for p, t, w in zip(pred_poly, target_poly, word_value):
+                if t == "-":
+                    continue
+                else:
+                    i = POLY_DICT[w].index(p)
+                    j = POLY_DICT[w].index(t)
+                    test_poly_dict[w][i,j] += 1
+                    print(w)
+                    print(test_poly_dict[w])
+        print("Model Accuracy: {}".format(model_acc))
+
+    poly_accuracy_out = open(os.path.join(save_dir, "accuracy.out"), "w")
+    poly_count = open(os.path.join(save_dir, "poly_count.out"), "w")
+    for key, value in test_poly_dict.items():
+        accuracy = np.trace(value) / np.sum(value)
+        poly_accuracy_out.writelines("{}\t{}\t{}\t{}\n".format(key, int(np.sum(value)), int(np.trace(value)), accuracy))
+        poly_count.writelines(key+"\n")
+        for i, poly_i in enumerate(POLY_DICT[key]):
+            for j, poly_j in enumerate(POLY_DICT[key]):
+                poly_count.write("{}->{}:{}\n".format(poly_i, poly_j, int(value[i,j])))
+
 def test_decode(hparams):
     hp = hparams
     coord = tf.train.Coordinator()
     feeder = DataFeeder(coord, hp, False)
-    symbol = Symbol(hp.vocab_path, hp.poly_dict_path)
-
     # construct model
     inputs, target_lengths, targets, poly_mask = feeder.dequeue()
     model = Poly_Model(hp, feeder.input_dim, feeder.num_class)
     model.initialize(inputs, target_lengths, targets, poly_mask)
-
     saver = tf.train.Saver()
     with tf.Session() as sess:
         feeder.start_in_session(sess)
         sess.run(tf.global_variables_initializer())
         if not restore_from_ckpt(sess, saver, hp.save_dir): sys.exit(-1)
-        test_acc = 0
         num_batchs = int(feeder.num_samples / hp.batch_size)
-        tmp=0
-        np.set_printoptions(precision=3)
-
-        for i in range(num_batchs):
-            # print(i)
-            correct = 0
-            total = 0
-            model_pre, model_acc, model_outputs, model_targets, model_target_seq \
-                = sess.run([model.pred, model.accuracy, model.outputs, model.targets, model.target_seq])
-            print(model_pre)
-            print(model_acc)
-            print(model_outputs)
-            print(model_targets)
-            print(model_target_seq)
-            # np.savetxt("{}.out".format(tmp), a[0], fmt='%1.4e')
-            for pred_poly_seq in symbol.sequence_to_label(model_pre):
-                print("\t".join(pred_poly_seq))
-            for ta in symbol.sequence_to_label(model_target_seq):
-                print("\t".join(ta))
-            for pred_poly_seq, ta in zip(symbol.sequence_to_label(model_pre),symbol.sequence_to_label(model_target_seq)):
-                if len(pred_poly_seq) != len(ta):
-                    print("length not equal")
-                    print("-----------------")
-                    continue
-                for p, t in zip(pred_poly_seq, ta):
-                    if t == "-":
-                        continue
-                    if p == t:
-                        correct += 1
-                    total += 1
-            print("Model Accuracy: {}".format(model_acc))
-            print("Test  Accuracy New: {}".format(float(correct)/float(total)))
+        count_polY_accuracy(model, num_batchs, sess, hp.save_dir)
 
 if __name__ == '__main__':
     tf.logging.set_verbosity(tf.logging.INFO)
